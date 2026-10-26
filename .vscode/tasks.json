@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "MacPulse: Build Debug",
+            "type": "process",
+            "command": "${workspaceFolder}/Scripts/swift.sh",
+            "args": ["build", "--product", "MacPulse"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": "$swiftc"
+        },
+        {
+            "label": "MacPulse: Build Release",
+            "type": "process",
+            "command": "${workspaceFolder}/Scripts/swift.sh",
+            "args": ["build", "-c", "release", "--product", "MacPulse"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": "$swiftc"
+        },
+        {
+            "label": "MacPulse: Test",
+            "type": "process",
+            "command": "${workspaceFolder}/Scripts/swift.sh",
+            "args": ["test"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "test",
+            "problemMatcher": "$swiftc"
+        }
+    ]
+}

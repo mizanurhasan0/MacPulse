@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Debug MacPulse",
+            "target": "MacPulse",
+            "configuration": "debug",
+            "preLaunchTask": "MacPulse: Build Debug",
+            "env": { "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer" }
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "name": "Release MacPulse",
+            "target": "MacPulse",
+            "configuration": "release",
+            "preLaunchTask": "MacPulse: Build Release",
+            "env": { "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer" }
+        }
+    ]
+}
