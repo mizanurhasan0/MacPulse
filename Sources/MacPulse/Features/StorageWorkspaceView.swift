@@ -3,6 +3,8 @@ import SwiftUI
 struct StorageView: View {
     @EnvironmentObject private var model: DashboardModel
     @EnvironmentObject private var localization: LocalizationStore
+    @State private var largeFileFolders: [FolderFileGroup] = []
+    @State private var duplicateFileFolders: [DuplicateFolderGroup] = []
     private var tab: StorageTab { StorageTab(rawValue: model.storageMode) ?? .caches }
 
     var body: some View {
@@ -17,6 +19,15 @@ struct StorageView: View {
             if tab == .caches { cacheContent } else { fileContent }
         }
         .navigationTitle(localization.text(.storage))
+        .onChange(of: model.fileResult?.scanID, initial: true) { _, _ in
+            guard let result = model.fileResult else {
+                largeFileFolders = []
+                duplicateFileFolders = []
+                return
+            }
+            largeFileFolders = groupScannedFilesByParent(result.largeFiles)
+            duplicateFileFolders = groupDuplicateFilesByParent(result.duplicateGroups)
+        }
     }
 
     private var cacheContent: some View {
@@ -138,17 +149,32 @@ struct StorageView: View {
     }
 
     private func largeResults(_ result: FileDiscoveryResult) -> some View {
-        VStack(spacing: 12) {
+        let keepers = Set(result.duplicateGroups.map { model.duplicateKeeper(for: $0).url })
+        return VStack(spacing: 12) {
             SelectionReviewBar(count: model.selectedLargeFiles.count, disabled: model.isBusy) {
                 model.prepareFileCleanup(duplicates: false)
             }
             if result.largeFiles.isEmpty {
                 Text(localization.workflow(.noLargeFiles)).foregroundStyle(.secondary).padding(24)
             }
+            if !largeFileFolders.isEmpty {
+                Text(localization.workflow(.bulkSelectionKeepsCopy))
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                folderAggregate(largeFileFolders)
+                InfoNote(text: localization.workflow(.folderSelectionHint), symbol: "folder")
+            }
             LazyVStack(spacing: 10) {
-                ForEach(result.largeFiles) { file in
-                    SurfaceCard(padding: 16) {
-                        FileSelectionRow(file: file, selection: $model.selectedLargeFiles, retained: false)
+                ForEach(largeFileFolders) { folder in
+                    FolderFileGroupCard(
+                        group: folder, selection: model.selectedLargeFiles, excluded: keepers,
+                        disabled: model.isBusy,
+                        onSetSelected: { selected in model.setLargeFileGroup(folder.files, selected: selected) }
+                    ) {
+                        ForEach(folder.files) { file in
+                            FileSelectionRow(file: file, selection: $model.selectedLargeFiles, retained: false)
+                            if file.id != folder.files.last?.id { Divider() }
+                        }
                     }
                 }
             }
@@ -170,30 +196,53 @@ struct StorageView: View {
                 if result.duplicateGroups.isEmpty {
                     Text(localization.workflow(.noDuplicates)).foregroundStyle(.secondary).padding(24)
                 }
-                LazyVStack(spacing: 16) {
-                    ForEach(result.duplicateGroups) { group in
-                        SurfaceCard {
-                            Label(
-                                "\(group.files.count) · \(formatBytes(group.keeper.logicalBytes))",
-                                systemImage: "doc.on.doc"
-                            )
-                            .font(.headline).accessibilityLabel(localization.workflow(.exactDuplicates))
-                            ForEach(group.files) { file in
-                                FileSelectionRow(
-                                    file: file, selection: $model.selectedDuplicates,
-                                    retained: model.duplicateKeeper(for: group).url == file.url)
-                                if model.duplicateKeeper(for: group).url != file.url {
+                folderAggregate(duplicateFileFolders.map(\.folderGroup))
+                InfoNote(text: localization.workflow(.folderSelectionHint), symbol: "folder")
+                LazyVStack(spacing: 12) {
+                    ForEach(duplicateFileFolders) { folder in
+                        let keepers = Set(folder.duplicateGroups.map { model.duplicateKeeper(for: $0).url })
+                        FolderFileGroupCard(
+                            group: folder.folderGroup, selection: model.selectedDuplicates, excluded: keepers,
+                            disabled: model.isBusy,
+                            onSetSelected: { selected in
+                                let eligible = folder.folderGroup.files.filter { !$0.isProtected && !keepers.contains($0.url) }
+                                if selected {
+                                    model.selectedDuplicates.formUnion(eligible.map(\.url))
+                                } else {
+                                    model.selectedDuplicates.subtract(eligible.map(\.url))
+                                }
+                            }
+                        ) {
+                            ForEach(folder.folderGroup.files) { file in
+                                FileSelectionRow(file: file, selection: $model.selectedDuplicates,
+                                    retained: keepers.contains(file.url))
+                                if let group = folder.duplicateGroupByFile[file.url],
+                                   model.duplicateKeeper(for: group).url != file.url {
                                     Button(localization.workflow(.keepThisCopy)) {
                                         model.keepDuplicate(file, in: group)
                                     }
                                     .buttonStyle(.borderless).disabled(model.isBusy)
                                 }
-                                if file.id != group.files.last?.id { Divider() }
+                                if file.id != folder.folderGroup.files.last?.id { Divider() }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private func folderAggregate(_ folders: [FolderFileGroup]) -> some View {
+        let fileCount = folders.reduce(0) { $0 + $1.files.count }
+        let bytes = folders.reduce(UInt64.zero) { total, folder in
+            let sum = total.addingReportingOverflow(folder.totalBytes)
+            return sum.overflow ? UInt64.max : sum.partialValue
+        }
+        return HStack {
+            Text(localization.workflow(.storageResults)).font(.headline)
+            Spacer(minLength: 12)
+            Text(localization.workflow(.storageFolderFilesAggregate, folders.count, fileCount, formatBytes(bytes)))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

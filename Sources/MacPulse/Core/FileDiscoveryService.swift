@@ -24,6 +24,7 @@ struct DuplicateGroup: Identifiable, Sendable {
 }
 
 struct FileDiscoveryResult: Sendable {
+    let scanID = UUID()
     let root: URL
     let largeFiles: [ScannedFile]
     let duplicateGroups: [DuplicateGroup]

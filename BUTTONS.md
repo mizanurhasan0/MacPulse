@@ -9,6 +9,7 @@ All action controls have live handlers; unavailable or unsafe actions are disabl
 | Cancel remaining work | Cancels pending scan/actions; retains completed outcomes | Scanner, Trash, executor and workflow cancellation tests |
 | Storage: Scan user caches | Fresh identities, metadata fingerprints and allocated estimates | Scanner tests + real cache fixture |
 | Storage category cards | Switches App caches / Large files / Duplicates; selection remains visible and accessible | Native previews in EN/BN/AR, compact/wide and fixture result states |
+| Folder checkbox / Expand | Selects eligible files inside the containing folder; expands to file checkboxes and duplicate keeper choices. The folder stays in place and known duplicate keepers are excluded from bulk selection. | Storage workflow and keeper guards |
 | Cache checkbox / Review / Cancel / Move to Trash | Eligibility, exact path preview, explicit approval and reversible move | Workflow tests + native sheets + actual macOS Trash/restore smoke |
 | Choose folder | NSOpenPanel directory choice and security-scoped access; Cancel preserves current choice | Native API integration; scanning validation uses generated directories |
 | Size threshold / Scan folder | Saves threshold; runs metadata-only large-file scanning or a separate staged duplicate scan | Discovery + workflow tests |

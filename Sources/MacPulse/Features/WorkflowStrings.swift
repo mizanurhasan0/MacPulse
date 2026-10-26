@@ -6,6 +6,10 @@ enum WorkflowKey: String, CaseIterable {
     case storageCacheIntro, storageLargeIntro, storageDuplicateIntro
     case storageReadyTitle, storageReadyDetail, storageReadOnly, storageProtectedHint
     case storageResults, storageCacheSummaryCount, storageFolderLabel
+    case storageFolderFilesSummary, storageFolderFilesAggregate
+    case expandFolder, collapseFolder, folderSelectionHint, folderSelectionState
+    case folderPartiallySelected, bulkSelectionKeepsCopy
+    case folderNotSelected
     case parallelWorkers, reusedHashProgress, scanPerformance, reuseFingerprints, reuseFingerprintsDetails
     case clearScanMemory, scanMemoryCleared
     case scanLargeFiles, scanDuplicates, precheckingFiles, duplicateScanNeeded, hashBytesProgress
@@ -88,6 +92,29 @@ let workflowTranslations: [WorkflowKey: (String, String, String)] = [
     .storageResults: ("Scan results", "স্ক্যানের ফলাফল", "نتائج الفحص"),
     .storageCacheSummaryCount: ("%d folders · %@ analyzed", "%dটি ফোল্ডার · %@ বিশ্লেষিত", "%d مجلداً · حُلّل %@"),
     .storageFolderLabel: ("Selected folder", "নির্বাচিত ফোল্ডার", "المجلد المحدد"),
+    .storageFolderFilesSummary: (
+        "%d files · %d selectable · %d selected", "%dটি ফাইল · %dটি নির্বাচনযোগ্য · %dটি নির্বাচিত",
+        "%d ملفات · %d قابلة للتحديد · %d محددة"
+    ),
+    .storageFolderFilesAggregate: (
+        "%d folders · %d files · %@ total", "%dটি ফোল্ডার · %dটি ফাইল · মোট %@",
+        "%d مجلدات · %d ملفات · الإجمالي %@"
+    ),
+    .expandFolder: ("Show files", "ফাইল দেখুন", "اعرض الملفات"),
+    .collapseFolder: ("Hide files", "ফাইল লুকান", "أخفِ الملفات"),
+    .folderSelectionHint: (
+        "Select eligible files inside this folder. The folder stays in place; known verified duplicates keep one copy.",
+        "ফোল্ডারের ভেতরের নির্বাচনযোগ্য ফাইল বাছুন। ফোল্ডারটি থাকবে, আর পরিচিত যাচাইকৃত duplicate থেকে একটি কপি রাখা হবে।",
+        "حدد الملفات المؤهلة داخل هذا المجلد. يبقى المجلد كما هو، وتُحفظ نسخة من التكرارات المؤكدة المعروفة."
+    ),
+    .folderSelectionState: ("Selected", "নির্বাচিত", "محدد"),
+    .folderPartiallySelected: ("Partially selected", "কিছু নির্বাচিত", "محدد جزئياً"),
+    .folderNotSelected: ("Not selected", "নির্বাচিত নয়", "غير محدد"),
+    .bulkSelectionKeepsCopy: (
+        "Select a folder to choose its eligible files. Each folder stays in place; known duplicate sets keep one copy. Expand to review individual files.",
+        "ফোল্ডার বাছলে তার নির্বাচনযোগ্য ফাইলগুলো চিহ্নিত হয়; ফোল্ডারটি থাকে। পরিচিত duplicate থেকে একটি কপি রাখা হয়। আলাদা ফাইল দেখতে ফোল্ডার খুলুন।",
+        "حدد مجلداً لاختيار ملفاته المؤهلة. يبقى المجلد كما هو وتُحفظ نسخة من التكرارات المعروفة. افتحه لمراجعة الملفات فردياً."
+    ),
     .parallelWorkers: ("Up to %d scan workers", "সর্বোচ্চ %dটি scan worker", "حتى %d من مهام الفحص المتزامنة"),
     .reusedHashProgress: (
         "%@ read · %@ reused · %@ planned", "%@ পড়া · %@ পুনর্ব্যবহার · মোট %@", "قُرئ %@ · أُعيد استخدام %@ · المخطط %@"

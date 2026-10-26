@@ -1,5 +1,67 @@
 import SwiftUI
 
+struct FolderFileGroup: Identifiable, Sendable {
+    let folder: URL
+    let files: [ScannedFile]
+    var id: URL { folder }
+    var totalBytes: UInt64 {
+        files.reduce(0) { total, file in
+            let sum = total.addingReportingOverflow(file.logicalBytes)
+            return sum.overflow ? UInt64.max : sum.partialValue
+        }
+    }
+}
+
+struct DuplicateFolderGroup: Identifiable, Sendable {
+    let folderGroup: FolderFileGroup
+    let duplicateGroups: [DuplicateGroup]
+    let duplicateGroupByFile: [URL: DuplicateGroup]
+    var id: URL { folderGroup.folder }
+}
+
+func groupScannedFilesByParent(_ files: [ScannedFile]) -> [FolderFileGroup] {
+    Dictionary(grouping: files) { FilePathPolicy.normalized($0.url.deletingLastPathComponent()) }
+        .map { folder, contents in
+            FolderFileGroup(folder: folder, files: contents.sorted { $0.url.path < $1.url.path })
+        }
+        .sorted {
+            $0.totalBytes == $1.totalBytes
+                ? $0.folder.path.localizedStandardCompare($1.folder.path) == .orderedAscending
+                : $0.totalBytes > $1.totalBytes
+        }
+}
+
+func groupDuplicateFilesByParent(_ groups: [DuplicateGroup]) -> [DuplicateFolderGroup] {
+    var filesByFolder: [URL: [ScannedFile]] = [:]
+    var groupsByFolder: [URL: [DuplicateGroup]] = [:]
+    var groupIDsByFolder: [URL: Set<String>] = [:]
+    var groupsByFile: [URL: [URL: DuplicateGroup]] = [:]
+
+    for group in groups {
+        var foldersInGroup: Set<URL> = []
+        for file in group.files {
+            let folder = FilePathPolicy.normalized(file.url.deletingLastPathComponent())
+            filesByFolder[folder, default: []].append(file)
+            groupsByFile[folder, default: [:]][file.url] = group
+            foldersInGroup.insert(folder)
+        }
+        for folder in foldersInGroup where groupIDsByFolder[folder, default: []].insert(group.id).inserted {
+            groupsByFolder[folder, default: []].append(group)
+        }
+    }
+
+    return filesByFolder.map { folder, files in
+        let fileGroup = FolderFileGroup(folder: folder, files: files.sorted { $0.url.path < $1.url.path })
+        return DuplicateFolderGroup(folderGroup: fileGroup, duplicateGroups: groupsByFolder[folder] ?? [],
+            duplicateGroupByFile: groupsByFile[folder] ?? [:])
+    }
+    .sorted {
+        $0.folderGroup.totalBytes == $1.folderGroup.totalBytes
+            ? $0.folderGroup.folder.path.localizedStandardCompare($1.folderGroup.folder.path) == .orderedAscending
+            : $0.folderGroup.totalBytes > $1.folderGroup.totalBytes
+    }
+}
+
 enum StorageTab: Int, CaseIterable, Identifiable {
     case caches, large, duplicates
     var id: Int { rawValue }
@@ -11,6 +73,78 @@ enum StorageTab: Int, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self { case .caches: "folder.badge.gearshape"; case .large: "doc.text.magnifyingglass"; case .duplicates: "doc.on.doc" }
+    }
+}
+
+struct FolderFileGroupCard<Content: View>: View {
+    @EnvironmentObject private var localization: LocalizationStore
+    @EnvironmentObject private var theme: ThemeStore
+    @State private var expanded = false
+
+    let group: FolderFileGroup
+    let selection: Set<URL>
+    let excluded: Set<URL>
+    let disabled: Bool
+    let onSetSelected: (Bool) -> Void
+    @ViewBuilder let content: () -> Content
+
+    private var selectableFiles: [ScannedFile] {
+        group.files.filter { !$0.isProtected && !excluded.contains($0.url) }
+    }
+    private var selectedCount: Int { selectableFiles.filter { selection.contains($0.url) }.count }
+    private var isComplete: Bool { !selectableFiles.isEmpty && selectedCount == selectableFiles.count }
+    private var isPartial: Bool { selectedCount > 0 && !isComplete }
+
+    var body: some View {
+        SurfaceCard(padding: 16) {
+            HStack(alignment: .center, spacing: 12) {
+                Button { onSetSelected(!isComplete) } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: isComplete ? "checkmark.square.fill" : (isPartial ? "minus.square.fill" : "square"))
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(isComplete || isPartial ? theme.accent.color : .secondary)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label(group.folder.lastPathComponent, systemImage: "folder.fill")
+                                .font(.callout.weight(.semibold))
+                                .lineLimit(1).truncationMode(.middle)
+                            Text(localization.workflow(.storageFolderFilesSummary,
+                                group.files.count, selectableFiles.count, selectedCount))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            Text(formatBytes(group.totalBytes))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(disabled || selectableFiles.isEmpty)
+                .accessibilityLabel(group.folder.lastPathComponent)
+                .accessibilityHint(localization.workflow(.folderSelectionHint))
+                .accessibilityValue(localization.workflow(isPartial ? .folderPartiallySelected : (isComplete ? .folderSelectionState : .folderNotSelected)))
+                .accessibilityAddTraits(isComplete ? .isSelected : [])
+
+                Button { expanded.toggle() } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
+                        .contentShape(RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+                .help(localization.workflow(expanded ? .collapseFolder : .expandFolder))
+                .accessibilityLabel(localization.workflow(expanded ? .collapseFolder : .expandFolder))
+                .accessibilityIdentifier("storage.folder.expand.\(group.folder.path)")
+            }
+
+            if expanded {
+                Divider().padding(.vertical, 2)
+                LazyVStack(alignment: .leading, spacing: 12) { content() }
+                    .padding(.leading, 8)
+                    .transition(.opacity)
+            }
+        }
     }
 }
 

@@ -356,6 +356,16 @@ struct MetricHistoryPoint: Identifiable {
         pendingReview = CleanupReview(actions: actions, source: .fileCleanup)
     }
 
+    /// Folder-level bulk selection only selects eligible copies. For each
+    /// verified duplicate set, the current keeper is left out when a folder is
+    /// selected so one copy remains even when all siblings share a folder.
+    func setLargeFileGroup(_ files: [ScannedFile], selected: Bool) {
+        guard !isBusy else { return }
+        let keepers = Set(fileResult?.duplicateGroups.map { duplicateKeeper(for: $0).url } ?? [])
+        let eligible = files.filter { !$0.isProtected && !keepers.contains($0.url) }.map(\.url)
+        if selected { selectedLargeFiles.formUnion(eligible) } else { selectedLargeFiles.subtract(eligible) }
+    }
+
     func approveCleanup(_ review: CleanupReview) {
         guard !isBusy, pendingReview?.id == review.id else { return }
         pendingReview = nil

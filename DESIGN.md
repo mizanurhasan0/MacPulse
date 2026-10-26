@@ -36,3 +36,9 @@ Three selectable category cards replace the thin segmented control. They include
 The initial empty state sits inside the scan panel, beside the task's explanation and action. Cache results have a distinct heading and aggregate size, and the selection review action has its own surface. File scans show an explicit selected-folder panel; the minimum-size control appears for large-file discovery. Dark-mode primary actions use dark text on the lighter accent for contrast; disabled actions use neutral colors.
 
 Thirteen native preview scenarios cover initial and fixture-result states, all three scan categories, 420- and 940-point detail panes, a 500-point viewport, light/dark appearance, and English/Bangla/Arabic RTL. Scroll document widths were checked against their viewports. Fixture scans confirmed results still populate the redesigned views, and the 94 existing regression tests passed. Preview data is synthetic; the actual app continues to show live disk measurements.
+
+## Storage file grouping
+
+Large-file and duplicate results collapse into the parent folders users chose to scan. Each folder summarizes file count and size, with one selection control for eligible children and an expand button for per-file review. Selection controls expose selected and partial states to accessibility. Known duplicate keepers stay out of folder-level bulk selection; the selected folder itself stays in place. Opening a folder exposes the original per-file metadata, reveal-in-Finder control, duplicate keeper choices, and individual selection.
+
+Grouping is built once for each scan result, then displayed through lazy folder and child stacks. Duplicate copies that sit in different folders appear under each location. Group selection spans the eligible copies inside that folder without removing the one verified keeper. App-cache rows already represent an entire reviewed cache folder, so one checkbox selects the complete cache candidate.
