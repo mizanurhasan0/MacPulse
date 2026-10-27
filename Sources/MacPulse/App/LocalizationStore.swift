@@ -5,21 +5,16 @@ import SwiftUI
 enum AppLanguage: String, CaseIterable, Identifiable {
     case english = "en"
     case bangla = "bn"
-    case arabic = "ar"
 
     var id: String { rawValue }
     var nativeName: String {
         switch self {
         case .english: "English"
         case .bangla: "বাংলা"
-        case .arabic: "العربية"
         }
     }
     var locale: Locale { Locale(identifier: rawValue) }
-    var direction: LayoutDirection {
-        self == .arabic ? .rightToLeft : .leftToRight
-    }
-    var layoutDirection: LayoutDirection { direction }
+    var layoutDirection: LayoutDirection { .leftToRight }
 }
 
 @MainActor final class LocalizationStore: ObservableObject {
@@ -42,9 +37,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         localized(key, language: language)
     }
 
-    var layoutDirection: LayoutDirection {
-        language == .arabic ? .rightToLeft : .leftToRight
-    }
+    var layoutDirection: LayoutDirection { .leftToRight }
 }
 
 struct LText: View {

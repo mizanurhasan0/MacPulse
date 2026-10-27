@@ -3,7 +3,18 @@ import Foundation
 enum ActivityKind: String, Codable, Sendable {
     case cacheScan
     case gracefulQuit
-    case cacheCleanup, fileScan, fileCleanup, smartBoost, developerStop
+    case cacheCleanup, fileScan, fileCleanup, smartBoost, developerStop, cleanerCleanup
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let storedValue = try container.decode(String.self)
+        self = ActivityKind(rawValue: storedValue) ?? .cleanerCleanup
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 enum ActivityStatus: String, Codable, Sendable {
@@ -26,6 +37,9 @@ struct ActivityRecord: Identifiable, Codable, Sendable {
 
     var safeSummary: String {
         switch (kind, status) {
+        case (.cleanerCleanup, .completed): "Mac cleanup completed"
+        case (.cleanerCleanup, .partial): "Mac cleanup completed with skipped items"
+        case (.cleanerCleanup, .failed): "Mac cleanup failed"
         case (.cacheScan, .completed): "Cache scan completed"
         case (.cacheScan, .partial): "Cache scan completed with skipped items"
         case (.gracefulQuit, .requested): "Graceful quit request sent"

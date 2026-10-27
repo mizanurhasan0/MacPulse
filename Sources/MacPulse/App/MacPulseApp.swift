@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct MacPulseApp: App {
-    @StateObject private var model = DashboardModel()
+    @StateObject private var model = CleanerModel()
     @StateObject private var localization = LocalizationStore()
     @StateObject private var theme = ThemeStore()
 
@@ -15,14 +15,8 @@ struct MacPulseApp: App {
                 .environment(\.layoutDirection, localization.layoutDirection)
                 .preferredColorScheme(theme.appearance.colorScheme)
                 .tint(theme.accent.color)
-                .frame(minWidth: 680, minHeight: 500)
+                .frame(minWidth: 860, minHeight: 620)
         }
-        .defaultSize(width: 1180, height: 780)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button(localization.text(.settings)) { model.selectedSection = "Settings" }
-                    .keyboardShortcut(",", modifiers: .command)
-            }
-        }
+        .defaultSize(width: 1120, height: 760)
     }
 }

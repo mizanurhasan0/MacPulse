@@ -7,8 +7,5 @@ let package = Package(
     products: [
         .executable(name: "MacPulse", targets: ["MacPulse"])
     ],
-    targets: [
-        .executableTarget(name: "MacPulse"),
-        .testTarget(name: "MacPulseTests", dependencies: ["MacPulse"])
-    ]
+    targets: [.executableTarget(name: "MacPulse")]
 )
