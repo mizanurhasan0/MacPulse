@@ -21,7 +21,7 @@ struct CleanerSnapshot: Sendable {
 }
 
 struct CleanupEntry: Identifiable, Sendable {
-    enum State: Sendable, Equatable { case pending, removed, retained }
+    enum State: Sendable, Equatable { case pending, cleaning, removed, retained }
 
     var id: String { url.path }
     var url: URL

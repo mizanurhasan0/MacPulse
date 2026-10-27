@@ -2,6 +2,30 @@ import AppKit
 import Darwin
 import Foundation
 
+final class CleanerPauseGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var paused = false
+
+    func pause() {
+        condition.lock()
+        paused = true
+        condition.unlock()
+    }
+
+    func resume() {
+        condition.lock()
+        paused = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitUntilResumed() {
+        condition.lock()
+        while paused { condition.wait() }
+        condition.unlock()
+    }
+}
+
 struct NativeCleanerService: Sendable {
     private struct Root: Sendable {
         var url: URL
@@ -11,23 +35,26 @@ struct NativeCleanerService: Sendable {
         var ownerBundleID: String? = nil
     }
 
-    func scan(progress: @escaping @Sendable (String) -> Void) async -> [CleanupEntry] {
+    func scan(pauseGate: CleanerPauseGate, progress: @escaping @Sendable (String) -> Void) async -> [CleanupEntry] {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         let runningIDs = await MainActor.run {
             Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier).map { $0.lowercased() })
         }
         return await Task.detached(priority: .utility) {
-            Self.scan(home: home, runningBundleIDs: runningIDs, progress: progress)
+            Self.scan(home: home, runningBundleIDs: runningIDs, pauseGate: pauseGate, progress: progress)
         }.value
     }
 
     func clean(
         _ entries: [CleanupEntry], runningBundleIDs: Set<String>,
+        pauseGate: CleanerPauseGate,
         onUpdate: @escaping @Sendable (String, CleanupEntry.State) -> Void
     ) async -> [CleanupEntry] {
         await Task.detached(priority: .utility) {
             var results = entries
             for index in results.indices {
+                pauseGate.waitUntilResumed()
+                onUpdate(results[index].url.path, .cleaning)
                 let state = Self.remove(
                     results[index], home: FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL,
                     runningBundleIDs: runningBundleIDs)
@@ -39,7 +66,8 @@ struct NativeCleanerService: Sendable {
     }
 
     private static func scan(
-        home: URL, runningBundleIDs: Set<String>, progress: @escaping @Sendable (String) -> Void
+        home: URL, runningBundleIDs: Set<String>, pauseGate: CleanerPauseGate,
+        progress: @escaping @Sendable (String) -> Void
     ) -> [CleanupEntry] {
         let library = home.appendingPathComponent("Library", isDirectory: true)
         let roots = [
@@ -59,9 +87,11 @@ struct NativeCleanerService: Sendable {
         var entries: [CleanupEntry] = []
         var seen = Set<String>()
         for root in roots {
+            pauseGate.waitUntilResumed()
             progress(root.category)
             entries += scanRoot(
-                root, home: home, runningBundleIDs: runningBundleIDs, seen: &seen, progress: progress)
+                root, home: home, runningBundleIDs: runningBundleIDs, seen: &seen,
+                pauseGate: pauseGate, progress: progress)
         }
 
         let support = library.appendingPathComponent("Application Support", isDirectory: true)
@@ -75,17 +105,20 @@ struct NativeCleanerService: Sendable {
             ("Google/GoogleUpdater/crx_cache", "Browser update cache", "com.google.GoogleUpdater"),
         ]
         for (relative, category, bundleID) in supportCaches {
+            pauseGate.waitUntilResumed()
             progress(category)
             entries += scanRoot(
                 Root(url: support.appendingPathComponent(relative, isDirectory: true),
                      category: category, recursiveTargets: true, ownerBundleID: bundleID),
-                home: home, runningBundleIDs: runningBundleIDs, seen: &seen, progress: progress)
+                home: home, runningBundleIDs: runningBundleIDs, seen: &seen,
+                pauseGate: pauseGate, progress: progress)
         }
 
         let containers = library.appendingPathComponent("Containers", isDirectory: true)
         let containerNames = (try? FileManager.default.contentsOfDirectory(
             at: containers, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         for container in containerNames {
+            pauseGate.waitUntilResumed()
             let bundleID = container.lastPathComponent
             guard bundleID.contains("."), !bundleID.lowercased().hasPrefix("com.apple."),
                   !runningBundleIDs.contains(bundleID.lowercased())
@@ -95,15 +128,18 @@ struct NativeCleanerService: Sendable {
             entries += scanRoot(
                 Root(url: dataRoot.appendingPathComponent("Library/Caches", isDirectory: true),
                      category: "Sandboxed app cache", recursiveTargets: true, ownerBundleID: bundleID),
-                home: home, runningBundleIDs: runningBundleIDs, seen: &seen, progress: progress)
+                home: home, runningBundleIDs: runningBundleIDs, seen: &seen,
+                pauseGate: pauseGate, progress: progress)
             entries += scanRoot(
                 Root(url: dataRoot.appendingPathComponent("tmp", isDirectory: true),
                      category: "Old app temporary files", recursiveTargets: true,
                      minimumAge: 7 * 24 * 60 * 60, ownerBundleID: bundleID),
-                home: home, runningBundleIDs: runningBundleIDs, seen: &seen, progress: progress)
+                home: home, runningBundleIDs: runningBundleIDs, seen: &seen,
+                pauseGate: pauseGate, progress: progress)
         }
 
         for browser in browserProfiles(in: library) {
+            pauseGate.waitUntilResumed()
             progress("Browser service worker cache")
             let bundleID = browser.bundleID.lowercased()
             guard !runningBundleIDs.contains(bundleID) else { continue }
@@ -111,7 +147,7 @@ struct NativeCleanerService: Sendable {
             entries += scanRoot(
                 Root(url: cache, category: "Browser service worker cache", recursiveTargets: true,
                      ownerBundleID: bundleID), home: home, runningBundleIDs: runningBundleIDs,
-                seen: &seen, skipActive: false, progress: progress)
+                seen: &seen, skipActive: false, pauseGate: pauseGate, progress: progress)
         }
 
         return entries.sorted { $0.estimatedBytes > $1.estimatedBytes }
@@ -119,7 +155,8 @@ struct NativeCleanerService: Sendable {
 
     private static func scanRoot(
         _ root: Root, home: URL, runningBundleIDs: Set<String>, seen: inout Set<String>,
-        skipActive: Bool = true, progress: (@Sendable (String) -> Void)? = nil
+        skipActive: Bool = true, pauseGate: CleanerPauseGate,
+        progress: (@Sendable (String) -> Void)? = nil
     ) -> [CleanupEntry] {
         if skipActive, let bundleID = root.ownerBundleID,
            runningBundleIDs.contains(bundleID.lowercased()) { return [] }
@@ -133,6 +170,7 @@ struct NativeCleanerService: Sendable {
             at: root.url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         var result: [CleanupEntry] = []
         for (index, child) in children.enumerated() {
+            pauseGate.waitUntilResumed()
             if index > 0 && index.isMultiple(of: 10) {
                 progress?("\(root.category) · \(index) folders checked")
             }
@@ -155,7 +193,7 @@ struct NativeCleanerService: Sendable {
             }
             let bytes: UInt64
             if root.recursiveTargets && info.st_mode & S_IFMT == S_IFDIR {
-                let inventory = allocatedSize(at: child, minimumAge: root.minimumAge) { folders, items in
+                let inventory = allocatedSize(at: child, minimumAge: root.minimumAge, pauseGate: pauseGate) { folders, items in
                     progress?("\(root.category) · \(folders) folders / \(items) items checked")
                 }
                 guard inventory.isComplete else { continue }
@@ -228,6 +266,7 @@ struct NativeCleanerService: Sendable {
 
     private static func allocatedSize(
         at root: URL, minimumAge: TimeInterval = 0,
+        pauseGate: CleanerPauseGate,
         progress: (@Sendable (Int, Int) -> Void)? = nil
     ) -> (bytes: UInt64, isComplete: Bool) {
         var pending = [root]
@@ -236,6 +275,7 @@ struct NativeCleanerService: Sendable {
         var total: UInt64 = 0
         var complete = true
         while let current = pending.popLast(), visited < 20_000, inspected < 100_000 {
+            pauseGate.waitUntilResumed()
             visited += 1
             if visited.isMultiple(of: 500) { progress?(visited, inspected) }
             guard let children = try? FileManager.default.contentsOfDirectory(

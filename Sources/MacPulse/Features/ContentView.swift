@@ -184,41 +184,29 @@ private struct CleanerHomeView: View {
     @EnvironmentObject private var model: CleanerModel
     @EnvironmentObject private var localization: LocalizationStore
     @State private var showCleanConfirmation = false
+    @State private var expandedGroups: Set<String> = []
+    @State private var isProgressHovered = false
+    @State private var hoveredGroup: String?
 
     private var bangla: Bool { localization.language == .bangla }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-                .padding(.horizontal, 30)
-                .padding(.top, 22)
-                .padding(.bottom, 18)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    hero
-                    if model.isBusy || !model.logLines.isEmpty {
-                        activityPanel
-                    }
-                    if model.hasScanResult {
-                        selectionSummary
-                    }
-                    if !model.entries.isEmpty {
-                        fileList
-                    } else if model.hasScanResult && !model.isBusy {
-                        ContentUnavailableView(
-                            bangla ? "ক্লিন করার কিছু নেই" : "Nothing to clean",
-                            systemImage: "checkmark.circle",
-                            description: Text(bangla ? "নিরাপদে পরিষ্কার করার মতো কোনো ফোল্ডার পাওয়া যায়নি।" : "No eligible folders were found."))
-                            .frame(maxWidth: .infinity)
-                    }
+        GeometryReader { geometry in
+            VStack {
+                VStack(spacing: 12) {
+                    topBar
+                    cleanupDashboard(
+                        availableWidth: geometry.size.width - 64,
+                        availableHeight: geometry.size.height - 152)
                 }
-                .frame(maxWidth: 1000, alignment: .leading)
-                .padding(30)
-                .frame(maxWidth: .infinity)
+                .padding(14)
+                .frame(maxWidth: 1680)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
             }
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .task { await model.refreshMetrics() }
         .confirmationDialog(
             bangla ? "এই ফোল্ডারগুলো পরিষ্কার করবেন?" : "Clean these folders?",
@@ -231,6 +219,448 @@ private struct CleanerHomeView: View {
             } message: {
                 Text(model.confirmationSummary)
             }
+    }
+
+    private func cleanupDashboard(availableWidth: CGFloat, availableHeight: CGFloat) -> some View {
+        let contentWidth = max(0, availableWidth - 22)
+        let progressWidth = min(580, max(220, contentWidth * 0.35))
+        let panelHeight = max(320, min(600, availableHeight))
+        let ringSize = min(350, max(170, min(progressWidth - 36, panelHeight - 185)))
+
+        return HStack(spacing: 0) {
+            progressPanel(ringSize: ringSize)
+                .frame(width: progressWidth)
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 1)
+                .padding(.vertical, 20)
+            folderSelectionPanel
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(height: panelHeight)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.07, green: 0.14, blue: 0.23), Color(nsColor: .underPageBackgroundColor)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.accentColor.opacity(0.2)))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    private func progressPanel(ringSize: CGFloat) -> some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: model.stage != .scanning || model.isPaused)) { timeline in
+                Button(action: progressControlTapped) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.09), style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                        Circle()
+                            .trim(from: 0, to: model.stage == .scanning ? 0.24 : ringProgress)
+                            .stroke(
+                                AngularGradient(
+                                    colors: [Color.accentColor.opacity(0.4), Color.cyan, Color.accentColor],
+                                    center: .center),
+                                style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                            .rotationEffect(.degrees(model.stage == .scanning && !model.isPaused
+                                ? timeline.date.timeIntervalSinceReferenceDate * -115
+                                : -90))
+                            .animation(.easeInOut(duration: 0.32), value: ringProgress)
+
+                        ringCenter
+                    }
+                    .overlay {
+                        if isProgressHovered {
+                            Image(systemName: progressControlSymbol)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 58, height: 58)
+                                .background(Color.accentColor.opacity(0.92), in: Circle())
+                                .overlay(Circle().strokeBorder(Color.white.opacity(0.24)))
+                                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                                .transition(.scale(scale: 0.86).combined(with: .opacity))
+                        }
+                    }
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .frame(width: ringSize, height: ringSize)
+                .accessibilityIdentifier("cleaner.progressControl")
+                .accessibilityLabel(progressControlAccessibilityLabel)
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: 0.16)) { isProgressHovered = hovering }
+                }
+                .animation(.easeOut(duration: 0.16), value: isProgressHovered)
+            }
+
+            VStack(spacing: 6) {
+                Text(progressTitle)
+                    .font(.system(size: ringSize >= 290 ? 30 : 24, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                Text(progressSubtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var ringCenter: some View {
+        if model.stage == .scanning {
+            ProgressView()
+                .controlSize(.regular)
+                .tint(.white)
+        } else if model.stage == .cleaning || model.cleanupIsComplete {
+            VStack(spacing: 1) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.cyan)
+                Text("\(Int((model.cleanupProgress * 100).rounded()))%")
+                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+            }
+        } else if model.hasScanResult {
+            VStack(spacing: 1) {
+                Text("\(model.selectedCount)")
+                    .font(.system(size: 42, weight: .bold, design: .rounded).monospacedDigit())
+                Text(bangla ? "নির্বাচিত" : "selected")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Image(systemName: "trash.fill")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(Color.cyan)
+        }
+    }
+
+    private var ringProgress: Double {
+        if model.stage == .cleaning || model.cleanupIsComplete { return model.cleanupProgress }
+        return model.hasScanResult ? 1 : 0.08
+    }
+
+    private var progressTitle: String {
+        if model.isPaused { return bangla ? "কাজ বিরতিতে" : "Paused" }
+        if model.stage == .scanning { return bangla ? "স্ক্যান চলছে" : "Scanning your Mac" }
+        if model.stage == .cleaning { return bangla ? "ক্লিনিং চলছে" : "Cleaning in progress" }
+        if model.cleanupIsComplete { return bangla ? "ক্লিনিং সম্পন্ন" : "Cleanup complete" }
+        if model.hasScanResult { return bangla ? "ক্লিন করার জন্য প্রস্তুত" : "Ready to clean" }
+        return bangla ? "স্ক্যানের জন্য প্রস্তুত" : "Ready to scan"
+    }
+
+    private var progressSubtitle: String {
+        if model.isPaused { return bangla ? "চালিয়ে যেতে রিংয়ে চাপ দিন" : "Tap the ring to resume" }
+        if model.stage == .scanning {
+            return bangla ? "নিরাপদে পরিষ্কারযোগ্য ফোল্ডার খোঁজা হচ্ছে" : "Checking eligible cache and app folders"
+        }
+        if model.stage == .cleaning {
+            return bangla
+                ? "\(model.cleanupCompletedCount) / \(model.cleanupTotal)টি ফোল্ডার সম্পন্ন"
+                : "\(model.cleanupCompletedCount) of \(model.cleanupTotal) folders complete"
+        }
+        if model.cleanupIsComplete {
+            return bangla
+                ? "\(model.cleanupCompletedCount)টি ফোল্ডার প্রসেস হয়েছে"
+                : "\(model.cleanupCompletedCount) folders processed"
+        }
+        if model.hasScanResult {
+            return model.entries.isEmpty
+                ? (bangla ? "পরিষ্কার করার মতো ফোল্ডার পাওয়া যায়নি" : "No eligible folders were found")
+                : (bangla
+                    ? "\(model.selectedCount)টি ফোল্ডার · আনুমানিক \(formattedBytes(model.selectedBytes))"
+                    : "\(model.selectedCount) folders · about \(formattedBytes(model.selectedBytes))")
+        }
+        return bangla ? "পরিষ্কারের আগে ফোল্ডারগুলো দেখে নিতে পারবেন" : "Review folders before anything is removed"
+    }
+
+    private var progressControlSymbol: String {
+        if model.isBusy { return model.isPaused ? "play.fill" : "pause.fill" }
+        if model.hasScanResult && !model.cleanupIsComplete && !model.entries.isEmpty { return "trash.fill" }
+        if model.cleanupIsComplete { return "arrow.clockwise" }
+        return "play.fill"
+    }
+
+    private var progressControlAccessibilityLabel: String {
+        if model.isBusy {
+            return model.isPaused
+                ? (bangla ? "আবার চালু করুন" : "Resume")
+                : (bangla ? "বিরতি দিন" : "Pause")
+        }
+        if model.hasScanResult && !model.cleanupIsComplete && !model.entries.isEmpty {
+            return bangla ? "নির্বাচিত ফোল্ডার পরিষ্কার করুন" : "Clean selected folders"
+        }
+        return bangla ? "স্ক্যান শুরু করুন" : "Start scan"
+    }
+
+    private func progressControlTapped() {
+        if model.isBusy {
+            model.togglePauseResume()
+        } else if model.hasScanResult && !model.cleanupIsComplete && !model.entries.isEmpty {
+            if model.selectedCount > 0 { showCleanConfirmation = true }
+            else { model.cleanSelected() }
+        } else {
+            model.scanForCleanup()
+        }
+    }
+
+    private func groupStatus(_ entries: [CleanupEntry]) -> (label: String, color: Color) {
+        let selected = entries.filter(\.isSelected)
+        guard !selected.isEmpty else { return (bangla ? "বাদ" : "Excluded", .secondary) }
+        if selected.contains(where: { $0.state == .cleaning }) {
+            return (bangla ? "চলছে" : "Cleaning", .cyan)
+        }
+        if model.stage == .cleaning && selected.contains(where: { $0.state == .pending }) {
+            return (bangla ? "অপেক্ষায়" : "Queued", .secondary)
+        }
+        if selected.contains(where: { $0.state == .pending }) {
+            return (bangla ? "প্রস্তুত" : "Ready", Color.accentColor)
+        }
+        if selected.contains(where: { $0.state == .retained }) {
+            return (bangla ? "কিছু বাদ" : "Partial", .orange)
+        }
+        return (bangla ? "সম্পন্ন" : "Done", .green)
+    }
+
+    private func statusChip(_ label: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(tint).frame(width: 7, height: 7)
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .foregroundStyle(tint)
+        .background(tint.opacity(0.12), in: Capsule())
+        .fixedSize()
+    }
+
+    private func categoryDescription(_ category: String, count: Int) -> String {
+        let lowercased = category.lowercased()
+        if lowercased.contains("browser") {
+            return bangla ? "ব্রাউজারের ক্যাশ · \(folderCountLabel(count))" : "Browser temporary data · \(folderCountLabel(count))"
+        }
+        if lowercased.contains("developer") || lowercased.contains("xcode") || lowercased.contains("simulator") {
+            return bangla ? "বিল্ড ও প্যাকেজ ক্যাশ · \(folderCountLabel(count))" : "Build and package caches · \(folderCountLabel(count))"
+        }
+        if lowercased.contains("homebrew") {
+            return bangla ? "প্যাকেজ ডাউনলোড · \(folderCountLabel(count))" : "Package downloads · \(folderCountLabel(count))"
+        }
+        if lowercased.contains("log") {
+            return bangla ? "অ্যাপের পুরোনো লগ · \(folderCountLabel(count))" : "Older application logs · \(folderCountLabel(count))"
+        }
+        return bangla ? "অ্যাপ ও সার্ভিসের ক্যাশ · \(folderCountLabel(count))" : "Caches from apps and services · \(folderCountLabel(count))"
+    }
+
+    private var folderSelectionPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(bangla ? "নির্বাচিত ফোল্ডার" : "Selected folders")
+                        .font(.headline)
+                    Text(model.hasScanResult
+                         ? (bangla ? "\(model.displayedSelectedCount) / \(model.entries.count) নির্বাচিত" : "\(model.displayedSelectedCount) of \(model.entries.count) selected")
+                         : (bangla ? "স্ক্যানের পর ফোল্ডার দেখা যাবে" : "Folders appear after scanning"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if model.hasScanResult && !model.entries.isEmpty {
+                    Toggle(bangla ? "সব নির্বাচন" : "Select all", isOn: Binding(
+                        get: { model.areAllEntriesSelected },
+                        set: { model.selectAll($0) }))
+                        .toggleStyle(.checkbox)
+                        .disabled(model.isBusy || model.pendingCount == 0)
+                        .fixedSize()
+                }
+            }
+
+            if !model.hasScanResult {
+                Spacer(minLength: 0)
+                VStack(spacing: 12) {
+                    Image(systemName: model.stage == .scanning ? "magnifyingglass" : "folder.badge.questionmark")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color.accentColor.opacity(0.85))
+                        .frame(width: 58, height: 58)
+                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 17))
+                    Text(model.stage == .scanning
+                         ? (bangla ? "ফোল্ডার স্ক্যান হচ্ছে" : "Scanning cleanup locations")
+                         : (bangla ? "আগে স্ক্যান চালান" : "Run a scan to review folders"))
+                        .font(.callout.weight(.semibold))
+                    Text(model.stage == .scanning
+                         ? (model.logLines.last?.text ?? (bangla ? "ফোল্ডারের তথ্য পরীক্ষা করা হচ্ছে" : "Checking folder contents"))
+                         : (bangla ? "কোন ফোল্ডারগুলো পরিষ্কার হবে তা আগে দেখে ও বেছে নিতে পারবেন।" : "You’ll be able to inspect and choose folders before cleaning."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+            } else if model.entries.isEmpty {
+                Spacer(minLength: 0)
+                ContentUnavailableView(
+                    bangla ? "ক্লিন করার কিছু নেই" : "Nothing to clean",
+                    systemImage: "checkmark.circle",
+                    description: Text(bangla ? "নিরাপদে পরিষ্কার করার মতো ফোল্ডার পাওয়া যায়নি।" : "No eligible cleanup folders were found."))
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 4) {
+                        ForEach(groupedEntries, id: \.category) { group in
+                            let expanded = expandedGroups.contains(group.category)
+                            let status = groupStatus(group.entries)
+                            VStack(spacing: 0) {
+                                HStack(spacing: 8) {
+                                    Button {
+                                        model.selectCategory(
+                                            group.category,
+                                            selected: !model.isCategorySelected(group.category))
+                                    } label: {
+                                        Image(systemName: model.isCategorySelected(group.category)
+                                              ? "checkmark.square.fill" : "square")
+                                            .font(.system(size: 17, weight: .semibold))
+                                            .foregroundStyle(model.isCategorySelected(group.category)
+                                                             ? Color.accentColor : Color.secondary.opacity(0.8))
+                                            .frame(width: 24, height: 48, alignment: .center)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(model.isBusy || model.pendingCount == 0)
+                                    .accessibilityLabel(model.isCategorySelected(group.category)
+                                                        ? (bangla ? "গ্রুপ থেকে বাদ দিন" : "Deselect group")
+                                                        : (bangla ? "গ্রুপ নির্বাচন করুন" : "Select group"))
+
+                                    Button {
+                                        toggleGroup(group.category)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundStyle(.tertiary)
+                                                .rotationEffect(.degrees(expanded ? 90 : 0))
+                                                .frame(width: 14, height: 32)
+                                            Image(systemName: categorySymbol(group.category))
+                                                .font(.callout.weight(.semibold))
+                                                .foregroundStyle(categoryColor(group.category))
+                                                .frame(width: 32, height: 32)
+                                                .background(categoryColor(group.category).opacity(0.13), in: RoundedRectangle(cornerRadius: 10))
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(group.category)
+                                                    .font(.callout.weight(.semibold))
+                                                    .lineLimit(1)
+                                                Text(categoryDescription(group.category, count: group.entries.count))
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            statusChip(status.label, tint: status.color)
+                                            Text(formattedBytes(group.entries.reduce(UInt64(0)) { $0 &+ $1.estimatedBytes }))
+                                                .font(.caption.monospacedDigit().weight(.medium))
+                                                .foregroundStyle(.secondary)
+                                                .frame(minWidth: 64, alignment: .trailing)
+                                        }
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .accessibilityLabel(expanded
+                                                        ? (bangla ? "ফোল্ডার লুকান: \(group.category)" : "Collapse \(group.category)")
+                                                        : (bangla ? "ফোল্ডার দেখান: \(group.category)" : "Expand \(group.category)"))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+
+                                if expanded {
+                                    VStack(spacing: 0) {
+                                        ForEach(group.entries) { entry in
+                                            Divider().padding(.leading, 51)
+                                            CleanupEntryRow(
+                                                entry: entry,
+                                                bangla: bangla,
+                                                isDisabled: model.isBusy || entry.state != .pending)
+                                        }
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
+                            }
+                            .padding(.horizontal, 5)
+                            .background(Color.white.opacity(hoveredGroup == group.category ? 0.065 : 0.035), in: RoundedRectangle(cornerRadius: 13))
+                            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.white.opacity(hoveredGroup == group.category ? 0.09 : 0.04)))
+                            .clipShape(RoundedRectangle(cornerRadius: 13))
+                            .onHover { hovering in
+                                withAnimation(.easeOut(duration: 0.16)) {
+                                    hoveredGroup = hovering ? group.category : nil
+                                }
+                            }
+                            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: expanded)
+                            .animation(.easeOut(duration: 0.16), value: hoveredGroup)
+                        }
+                    }
+                    .padding(.trailing, 3)
+                }
+                .scrollIndicators(.hidden)
+            }
+
+            dashboardProgressFooter
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var dashboardProgressFooter: some View {
+        if model.stage == .cleaning || model.cleanupIsComplete {
+            VStack(alignment: .leading, spacing: 8) {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule()
+                            .fill(LinearGradient(colors: [.cyan, Color.accentColor], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geometry.size.width * model.cleanupProgress)
+                    }
+                }
+                .frame(height: 10)
+                HStack(spacing: 5) {
+                    Text("\(Int((model.cleanupProgress * 100).rounded()))% \(bangla ? "সম্পন্ন" : "complete")")
+                        .fontWeight(.semibold)
+                    Text("· \(formattedBytes(model.estimatedCleanedBytes)) \(bangla ? "আনুমানিক পরিষ্কার" : "estimated cleaned")")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption.monospacedDigit())
+            }
+            .padding(.top, 7)
+        } else if model.hasScanResult && !model.entries.isEmpty {
+            HStack(spacing: 8) {
+                Image(systemName: "externaldrive")
+                    .foregroundStyle(.cyan)
+                Text(bangla ? "আনুমানিক পরিষ্কারযোগ্য" : "Estimated to reclaim")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(formattedBytes(model.selectedBytes))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .padding(.top, 6)
+        }
+    }
+
+    private func formattedBytes(_ value: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
     }
 
     private var topBar: some View {
@@ -257,6 +687,7 @@ private struct CleanerHomeView: View {
                 tint: thermalTint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
     }
 
     private func metricChip(title: String, value: String, symbol: String, tint: Color) -> some View {
@@ -293,206 +724,20 @@ private struct CleanerHomeView: View {
         }
     }
 
-    private var selectionSummary: some View {
-        HStack(spacing: 12) {
-            summaryTile(
-                title: bangla ? "নির্বাচিত ফোল্ডার" : "Selected folders",
-                value: "\(model.selectedCount) / \(model.pendingCount)",
-                symbol: "folder.badge.checkmark",
-                tint: .indigo)
-            summaryTile(
-                title: bangla ? "আনুমানিক জায়গা" : "Estimated space",
-                value: ByteCountFormatter.string(fromByteCount: Int64(clamping: model.selectedBytes), countStyle: .file),
-                symbol: "externaldrive.badge.checkmark",
-                tint: .green)
-            Spacer(minLength: 4)
-            Toggle(bangla ? "সব নির্বাচন" : "Select all", isOn: Binding(
-                get: { model.pendingCount > 0 && model.selectedCount == model.pendingCount },
-                set: { model.selectAll($0) }))
-                .toggleStyle(.checkbox)
-                .disabled(model.isBusy || model.pendingCount == 0)
-                .fixedSize()
-        }
-        .padding(15)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary))
-    }
-
-    private func summaryTile(title: String, value: String, symbol: String, tint: Color) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: symbol).font(.title3).foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value).font(.callout.weight(.semibold).monospacedDigit())
-                Text(title).font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-    }
-
-    private var hero: some View {
-        VStack(spacing: 16) {
-            Image(systemName: model.isBusy ? "arrow.trianglehead.2.clockwise.rotate.90" : "trash.fill")
-                .font(.system(size: 32, weight: .medium))
-                .foregroundStyle(.tint)
-                .frame(width: 66, height: 66)
-                .background(Color.accentColor.opacity(0.11), in: RoundedRectangle(cornerRadius: 20))
-            VStack(spacing: 6) {
-                Text(model.hasScanResult
-                     ? (bangla ? "কী পরিষ্কার হবে বেছে নিন" : "Review what will be cleaned")
-                     : (bangla ? "ম্যাক পরিষ্কার করুন" : "Clean your Mac"))
-                    .font(.largeTitle.bold())
-                Text(bangla
-                     ? "আগে ফোল্ডারগুলো দেখে নিন, তারপর যেগুলো চান সেগুলো পরিষ্কার করুন।"
-                     : "Review the folders first, then clean only what you choose.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            Button {
-                if model.hasScanResult {
-                    if model.selectedCount > 0 { showCleanConfirmation = true }
-                    else { model.cleanSelected() }
-                } else {
-                    model.scanForCleanup()
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    if model.isBusy { ProgressView().controlSize(.small) }
-                    else { Image(systemName: model.hasScanResult ? "trash.fill" : "magnifyingglass") }
-                    Text(model.isBusy
-                         ? (model.stage == .scanning
-                            ? (bangla ? "ফাইল স্ক্যান হচ্ছে…" : "Scanning files…")
-                            : (bangla ? "ফাইল পরিষ্কার হচ্ছে…" : "Cleaning files…"))
-                         : (model.hasScanResult
-                            ? (bangla ? "নির্বাচিতগুলো পরিষ্কার · \(model.selectedCount)" : "Clean selected · \(model.selectedCount)")
-                            : (bangla ? "স্ক্যান শুরু করুন" : "Scan for cleanup")))
-                }
-                .font(.headline)
-                .frame(minWidth: 215)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(model.isBusy || (model.hasScanResult && model.selectedCount == 0))
-            .keyboardShortcut(.defaultAction)
-            .accessibilityIdentifier("cleaner.run")
-            if model.hasScanResult {
-                Button(bangla ? "আবার স্ক্যান" : "Scan again", action: model.scanForCleanup)
-                    .buttonStyle(.link)
-                    .disabled(model.isBusy)
-            }
-            if let result = model.lastResult {
-                Text(result).font(.callout.weight(.medium)).foregroundStyle(.green)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 27)
-        .padding(.horizontal, 22)
-        .background(
-            LinearGradient(colors: [Color.accentColor.opacity(0.09), Color.accentColor.opacity(0.025)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.accentColor.opacity(0.12)))
-    }
-
-    private var activityPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(bangla ? "লাইভ প্রক্রিয়া" : "Live process")
-                    .font(.headline)
-                Spacer()
-                if model.isBusy { ProgressView().controlSize(.small) }
-            }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 7) {
-                        ForEach(model.logLines) { row in
-                            HStack(alignment: .top, spacing: 9) {
-                                Circle()
-                                    .fill(row.isWarning ? Color.orange : Color.accentColor)
-                                    .frame(width: 6, height: 6)
-                                    .padding(.top, 5)
-                                Text(row.text)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(row.isWarning ? .orange : .secondary)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .id(row.id)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(height: min(190, max(72, CGFloat(model.logLines.count) * 21)))
-                .onChange(of: model.logLines.count) { _, _ in
-                    if let last = model.logLines.last { proxy.scrollTo(last.id, anchor: .bottom) }
-                }
-            }
-        }
-        .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary))
-    }
-
-    private var fileList: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(alignment: .firstTextBaseline) {
-                Label(bangla ? "পরিষ্কারের ফোল্ডার" : "Cleanup folders", systemImage: "folder.badge.gearshape")
-                    .font(.headline)
-                Spacer()
-                Text(bangla ? "\(groupedEntries.count)টি গ্রুপ" : "\(groupedEntries.count) groups")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }
-            VStack(spacing: 12) {
-                ForEach(groupedEntries, id: \.category) { group in
-                    VStack(spacing: 0) {
-                        HStack(spacing: 10) {
-                            Image(systemName: categorySymbol(group.category))
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(categoryColor(group.category))
-                                .frame(width: 30, height: 30)
-                                .background(categoryColor(group.category).opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(group.category).font(.callout.weight(.semibold))
-                                Text(folderCountLabel(group.entries.count))
-                                    .font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: group.entries.reduce(UInt64(0)) { $0 &+ $1.estimatedBytes }), countStyle: .file))
-                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            Toggle(isOn: Binding(
-                                get: { model.isCategorySelected(group.category) },
-                                set: { model.selectCategory(group.category, selected: $0) })) {
-                                    Text(bangla ? "সব ফোল্ডার" : "Select group")
-                                        .font(.caption.weight(.medium))
-                                }
-                                .toggleStyle(.checkbox)
-                                .disabled(model.isBusy || group.entries.allSatisfy { $0.state != .pending })
-                                .accessibilityLabel(bangla ? "এই গ্রুপ নির্বাচন" : "Select this group")
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
-
-                        ForEach(group.entries) { entry in
-                            Divider().padding(.leading, 54)
-                            CleanupEntryRow(
-                                entry: entry,
-                                bangla: bangla,
-                                isDisabled: model.isBusy || entry.state != .pending)
-                        }
-                    }
-                    .background(.background, in: RoundedRectangle(cornerRadius: 15))
-                    .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(.quaternary))
-                }
-            }
-        }
-    }
-
     private var groupedEntries: [(category: String, entries: [CleanupEntry])] {
         Dictionary(grouping: model.entries, by: \.category)
             .map { (category: $0.key, entries: $0.value.sorted { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }) }
             .sorted { $0.category.localizedStandardCompare($1.category) == .orderedAscending }
+    }
+
+    private func toggleGroup(_ category: String) {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            if expandedGroups.contains(category) {
+                expandedGroups.remove(category)
+            } else {
+                expandedGroups.insert(category)
+            }
+        }
     }
 
     private func categorySymbol(_ category: String) -> String {
@@ -529,6 +774,7 @@ private struct CleanupEntryRow: View {
     private var stateIcon: String? {
         switch entry.state {
         case .pending: nil
+        case .cleaning: "arrow.triangle.2.circlepath"
         case .removed: "checkmark.circle.fill"
         case .retained: "minus.circle"
         }
@@ -536,6 +782,7 @@ private struct CleanupEntryRow: View {
     private var stateColor: Color {
         switch entry.state {
         case .pending: .secondary
+        case .cleaning: .cyan
         case .removed: .green
         case .retained: .orange
         }
@@ -587,6 +834,7 @@ private struct CleanupEntryRow: View {
     private var stateLabel: String {
         switch entry.state {
         case .pending: bangla ? "প্রস্তুত" : "Ready"
+        case .cleaning: bangla ? "পরিষ্কার হচ্ছে" : "Cleaning"
         case .removed: bangla ? "মুছে গেছে" : "Removed"
         case .retained: bangla ? "রয়ে গেছে" : "Kept"
         }
