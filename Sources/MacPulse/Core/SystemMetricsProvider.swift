@@ -13,11 +13,20 @@ import Foundation
         ])
         let total = UInt64(max(0, values?.volumeTotalCapacity ?? 0))
         let available = UInt64(max(0, values?.volumeAvailableCapacity ?? 0))
+        let thermal: ThermalCondition = switch ProcessInfo.processInfo.thermalState {
+        case .nominal: .normal
+        case .fair: .fair
+        case .serious: .serious
+        case .critical: .critical
+        @unknown default: .unknown
+        }
         return CleanerSnapshot(
             timestamp: .now,
             cpuPercent: cpu,
             totalStorageBytes: total,
-            availableStorageBytes: min(total, available))
+            availableStorageBytes: min(total, available),
+            totalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
+            thermalCondition: thermal)
     }
 
     private func readCPU() -> Double? {

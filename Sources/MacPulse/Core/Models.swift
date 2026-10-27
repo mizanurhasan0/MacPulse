@@ -1,10 +1,16 @@
 import Foundation
 
+enum ThermalCondition: Sendable {
+    case normal, fair, serious, critical, unknown
+}
+
 struct CleanerSnapshot: Sendable {
     var timestamp: Date
     var cpuPercent: Double?
     var totalStorageBytes: UInt64
     var availableStorageBytes: UInt64
+    var totalMemoryBytes: UInt64
+    var thermalCondition: ThermalCondition
 
     var usedStorageBytes: UInt64 {
         totalStorageBytes > availableStorageBytes ? totalStorageBytes - availableStorageBytes : 0

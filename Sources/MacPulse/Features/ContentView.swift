@@ -16,19 +16,69 @@ struct ContentView: View {
     @EnvironmentObject private var model: CleanerModel
     @EnvironmentObject private var localization: LocalizationStore
     @State private var selection: CleanerPage? = .cleaner
+    @Namespace private var sidebarSelection
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                Section {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 11) {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 40, height: 40)
+                        .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("MacPulse")
+                            .font(.headline.weight(.bold))
+                        Text(copy("MAC CLEANER", "ম্যাক ক্লিনার"))
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(1.1)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 10)
+
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(copy("WORKSPACE", "ওয়ার্কস্পেস"))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(1.1)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 3)
                     pageRow(.cleaner, title: copy("Cleaner", "ক্লিনার"))
                     pageRow(.history, title: copy("Activity History", "অ্যাক্টিভিটি হিস্ট্রি"))
                     pageRow(.settings, title: copy("Settings", "সেটিংস"))
                 }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 9) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(copy("Runs locally", "লোকালেই চলে"))
+                            .font(.caption.weight(.semibold))
+                        Text(copy("Your files stay on this Mac", "ফাইল এই Mac-এই থাকে"))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
             }
-            .listStyle(.sidebar)
-            .navigationTitle("MacPulse")
-            .navigationSplitViewColumnWidth(min: 185, ideal: 210, max: 250)
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(.regularMaterial)
+            .navigationSplitViewColumnWidth(min: 205, ideal: 230, max: 270)
         } detail: {
             Group {
                 switch selection ?? .cleaner {
@@ -55,14 +105,78 @@ struct ContentView: View {
     }
 
     private func pageRow(_ page: CleanerPage, title: String) -> some View {
-        Label(title, systemImage: page.symbol)
-            .padding(.vertical, 5)
-            .tag(page)
-            .accessibilityIdentifier("nav.\(page.rawValue)")
+        SidebarNavigationRow(
+            page: page,
+            title: title,
+            symbol: page.symbol,
+            isSelected: selection == page,
+            namespace: sidebarSelection) {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    selection = page
+                }
+            }
     }
 
     private func copy(_ english: String, _ bangla: String) -> String {
         localization.language == .bangla ? bangla : english
+    }
+}
+
+private struct SidebarNavigationRow: View {
+    let page: CleanerPage
+    let title: String
+    let symbol: String
+    let isSelected: Bool
+    let namespace: Namespace.ID
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 11) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: isSelected ? .semibold : .medium))
+                    .symbolVariant(isSelected ? .fill : .none)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 24, height: 24)
+                    .scaleEffect(isSelected ? 1.06 : 1)
+                Text(title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(isHovered ? 0.045 : 0))
+                    .matchedGeometryEffect(id: "sidebar-selection", in: namespace, isSource: isSelected)
+            }
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 3, height: 20)
+                        .padding(.leading, 2)
+                        .transition(.opacity.combined(with: .scale))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("nav.\(page.rawValue)")
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.16)) { isHovered = hovering }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
     }
 }
 
@@ -120,17 +234,9 @@ private struct CleanerHomeView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(bangla ? "ম্যাক ক্লিনার" : "Mac Cleaner")
-                    .font(.title2.bold())
-                Text(bangla ? "আপনার Mac-এর জন্য সহজ ও স্বচ্ছ ক্লিনার" : "A clear, built-in cleaner for your Mac")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        HStack(spacing: 12) {
             metricChip(
-                title: bangla ? "CPU health" : "CPU health",
+                title: bangla ? "CPU ব্যবহার" : "CPU usage",
                 value: model.snapshot?.cpuPercent.map { "\(Int($0.rounded()))%" } ?? "—",
                 symbol: "cpu",
                 tint: model.snapshot?.cpuPercent.map { $0 >= 85 ? Color.orange : .green } ?? .secondary)
@@ -139,7 +245,18 @@ private struct CleanerHomeView: View {
                 value: model.snapshot.map { ByteCountFormatter.string(fromByteCount: Int64($0.availableStorageBytes), countStyle: .file) } ?? "—",
                 symbol: "internaldrive",
                 tint: model.snapshot.map { $0.storageUsedFraction >= 0.9 ? .orange : .blue } ?? .secondary)
+            metricChip(
+                title: bangla ? "মোট RAM" : "Memory",
+                value: model.snapshot.map { ByteCountFormatter.string(fromByteCount: Int64(clamping: $0.totalMemoryBytes), countStyle: .memory) } ?? "—",
+                symbol: "memorychip",
+                tint: .purple)
+            metricChip(
+                title: bangla ? "তাপীয় অবস্থা" : "Thermal state",
+                value: thermalLabel,
+                symbol: "thermometer.medium",
+                tint: thermalTint)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func metricChip(title: String, value: String, symbol: String, tint: Color) -> some View {
@@ -151,8 +268,29 @@ private struct CleanerHomeView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var thermalLabel: String {
+        switch model.snapshot?.thermalCondition ?? .unknown {
+        case .normal: bangla ? "স্বাভাবিক" : "Normal"
+        case .fair: bangla ? "মাঝারি" : "Fair"
+        case .serious: bangla ? "উচ্চ" : "Serious"
+        case .critical: bangla ? "গুরুতর" : "Critical"
+        case .unknown: "—"
+        }
+    }
+
+    private var thermalTint: Color {
+        switch model.snapshot?.thermalCondition ?? .unknown {
+        case .normal: .green
+        case .fair: .yellow
+        case .serious: .orange
+        case .critical: .red
+        case .unknown: .secondary
+        }
     }
 
     private var selectionSummary: some View {
@@ -317,16 +455,18 @@ private struct CleanerHomeView: View {
                                 .background(categoryColor(group.category).opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(group.category).font(.callout.weight(.semibold))
-                                Text(bangla ? "\(group.entries.count)টি ফোল্ডার" : "\(group.entries.count) folders")
+                                Text(folderCountLabel(group.entries.count))
                                     .font(.caption2).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: group.entries.reduce(UInt64(0)) { $0 &+ $1.estimatedBytes }), countStyle: .file))
                                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            Toggle(group.category, isOn: Binding(
+                            Toggle(isOn: Binding(
                                 get: { model.isCategorySelected(group.category) },
-                                set: { model.selectCategory(group.category, selected: $0) }))
-                                .labelsHidden()
+                                set: { model.selectCategory(group.category, selected: $0) })) {
+                                    Text(bangla ? "সব ফোল্ডার" : "Select group")
+                                        .font(.caption.weight(.medium))
+                                }
                                 .toggleStyle(.checkbox)
                                 .disabled(model.isBusy || group.entries.allSatisfy { $0.state != .pending })
                                 .accessibilityLabel(bangla ? "এই গ্রুপ নির্বাচন" : "Select this group")
@@ -373,6 +513,11 @@ private struct CleanerHomeView: View {
         if value.contains("temporary") { return .teal }
         return .indigo
     }
+
+    private func folderCountLabel(_ count: Int) -> String {
+        if bangla { return "\(count)টি ফোল্ডার" }
+        return count == 1 ? "1 folder" : "\(count) folders"
+    }
 }
 
 private struct CleanupEntryRow: View {
@@ -381,9 +526,9 @@ private struct CleanupEntryRow: View {
     let bangla: Bool
     let isDisabled: Bool
 
-    private var stateIcon: String {
+    private var stateIcon: String? {
         switch entry.state {
-        case .pending: "circle"
+        case .pending: nil
         case .removed: "checkmark.circle.fill"
         case .retained: "minus.circle"
         }
@@ -401,7 +546,11 @@ private struct CleanupEntryRow: View {
             get: { entry.isSelected },
             set: { model.setEntry(entry.url.path, selected: $0) })) {
             HStack(spacing: 10) {
-                Image(systemName: stateIcon).foregroundStyle(stateColor).frame(width: 16)
+                if let stateIcon {
+                    Image(systemName: stateIcon)
+                        .foregroundStyle(stateColor)
+                        .frame(width: 16)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.url.lastPathComponent)
                         .font(.callout.weight(.medium))
@@ -420,9 +569,12 @@ private struct CleanupEntryRow: View {
                         .frame(minWidth: 62, alignment: .trailing)
                 }
                 Text(stateLabel)
-                    .font(.caption2)
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(stateColor)
-                    .frame(width: 78, alignment: .trailing)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(stateColor.opacity(0.11), in: Capsule())
+                    .frame(minWidth: 76, alignment: .trailing)
             }
         }
         .toggleStyle(.checkbox)
@@ -434,7 +586,7 @@ private struct CleanupEntryRow: View {
 
     private var stateLabel: String {
         switch entry.state {
-        case .pending: bangla ? "অপেক্ষায়" : "Waiting"
+        case .pending: bangla ? "প্রস্তুত" : "Ready"
         case .removed: bangla ? "মুছে গেছে" : "Removed"
         case .retained: bangla ? "রয়ে গেছে" : "Kept"
         }
@@ -539,44 +691,268 @@ private struct CleanerSettingsView: View {
     private var bangla: Bool { localization.language == .bangla }
 
     var body: some View {
-        Form {
-            Section(bangla ? "চেহারা" : "Appearance") {
-                Picker(bangla ? "থিম" : "Theme", selection: Binding(
-                    get: { theme.appearance }, set: { theme.setAppearance($0) })) {
-                        ForEach(AppearanceMode.allCases) { mode in
-                            Text(localization.text(mode.translationKey)).tag(mode)
+        GeometryReader { geometry in
+            let isWide = geometry.size.width >= 820
+            let columns = isWide
+                ? [GridItem(.flexible(), spacing: 18, alignment: .top), GridItem(.flexible(), spacing: 18, alignment: .top)]
+                : [GridItem(.flexible(), alignment: .top)]
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    pageHeader
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                        if isWide {
+                            appearanceCard
+                            aboutCard
+                            languageCard
+                            privacyCard
+                        } else {
+                            appearanceCard
+                            languageCard
+                            privacyCard
+                            aboutCard
                         }
                     }
-                Picker(bangla ? "অ্যাকসেন্ট রং" : "Accent color", selection: Binding(
-                    get: { theme.accent }, set: { theme.setAccent($0) })) {
-                        ForEach(AccentPalette.allCases) { palette in
-                            Text(localization.text(palette.translationKey)).tag(palette)
-                        }
-                    }
+                }
+                .frame(maxWidth: 1260, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 30)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            Section(bangla ? "ভাষা" : "Language") {
-                Picker(bangla ? "অ্যাপের ভাষা" : "App language", selection: Binding(
-                    get: { localization.language }, set: { localization.setLanguage($0) })) {
-                        ForEach(AppLanguage.allCases) { language in
-                            Text(language.nativeName).tag(language)
-                        }
-                    }
-            }
-            Section(bangla ? "গোপনীয়তা" : "Privacy") {
-                Label(
-                    bangla ? "ক্লিনআপ এই Mac-এ চলে। ফাইলের path ইতিহাসে রাখা হয় না।" : "Cleanup runs on this Mac. File paths are not stored in history.",
-                    systemImage: "lock.shield")
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .navigationTitle("")
+        .toolbarTitleDisplayMode(.inline)
+    }
+
+    private var pageHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(theme.accent.color)
+                .frame(width: 48, height: 48)
+                .background(theme.accent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 15))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(bangla ? "সেটিংস" : "Settings")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                Text(bangla ? "অ্যাপের পছন্দ ও গোপনীয়তা নিয়ন্ত্রণ করুন" : "Personalize your workspace and privacy")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            Section(bangla ? "সম্পর্কে" : "About") {
-                LabeledContent(bangla ? "macOS" : "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString)
-                LabeledContent(bangla ? "ক্লিনার" : "Cleaner", value: "Built in")
-            }
+            Spacer()
+            Label(bangla ? "এই Mac-এ" : "On this Mac", systemImage: "checkmark.shield.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.green)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.green.opacity(0.1), in: Capsule())
         }
-        .formStyle(.grouped)
-        .padding(24)
-        .frame(maxWidth: 720, alignment: .leading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .navigationTitle(bangla ? "সেটিংস" : "Settings")
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var appearanceCard: some View {
+        settingsCard(
+            symbol: "paintpalette.fill",
+            tint: .purple,
+            title: bangla ? "চেহারা" : "Appearance",
+            subtitle: bangla ? "থিম ও অ্যাকসেন্ট রং বেছে নিন" : "Choose a theme and accent color") {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text(bangla ? "থিম" : "Theme")
+                            .font(.subheadline.weight(.semibold))
+                        HStack(spacing: 8) {
+                            ForEach(AppearanceMode.allCases) { mode in
+                                choiceButton(
+                                    title: localization.text(mode.translationKey),
+                                    symbol: themeSymbol(mode),
+                                    isSelected: theme.appearance == mode) {
+                                        theme.setAppearance(mode)
+                                    }
+                            }
+                        }
+                    }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text(bangla ? "অ্যাকসেন্ট রং" : "Accent color")
+                            .font(.subheadline.weight(.semibold))
+                        HStack(spacing: 8) {
+                            ForEach(AccentPalette.allCases) { palette in
+                                Button { theme.setAccent(palette) } label: {
+                                    HStack(spacing: 8) {
+                                        Circle()
+                                            .fill(palette.color)
+                                            .frame(width: 13, height: 13)
+                                            .overlay {
+                                                if theme.accent == palette {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.system(size: 8, weight: .heavy))
+                                                        .foregroundStyle(.white)
+                                                }
+                                            }
+                                        Text(localization.text(palette.translationKey))
+                                            .font(.caption.weight(.medium))
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 9)
+                                    .background(theme.accent == palette ? palette.color.opacity(0.13) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(theme.accent == palette ? palette.color.opacity(0.4) : Color.primary.opacity(0.06)))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(localization.text(palette.translationKey))
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
+    private var languageCard: some View {
+        settingsCard(
+            symbol: "globe",
+            tint: .blue,
+            title: bangla ? "ভাষা" : "Language",
+            subtitle: bangla ? "অ্যাপের প্রদর্শিত ভাষা নির্ধারণ করুন" : "Choose the language used throughout the app") {
+                HStack(spacing: 10) {
+                    ForEach(AppLanguage.allCases) { language in
+                        choiceButton(
+                            title: language.nativeName,
+                            symbol: language == .english ? "textformat" : "character.book.closed",
+                            isSelected: localization.language == language) {
+                                localization.setLanguage(language)
+                            }
+                    }
+                }
+            }
+    }
+
+    private var privacyCard: some View {
+        settingsCard(
+            symbol: "lock.shield.fill",
+            tint: .green,
+            title: bangla ? "গোপনীয়তা" : "Privacy",
+            subtitle: bangla ? "আপনার ফাইল আপনার Mac-এই থাকে" : "Your files stay on your Mac") {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(bangla ? "লোকাল ক্লিনআপ" : "Local cleanup")
+                            .font(.subheadline.weight(.semibold))
+                        Text(bangla
+                             ? "স্ক্যান ও পরিষ্কার এই ডিভাইসেই হয়। ফাইলের path অ্যাক্টিভিটি হিস্ট্রিতে সংরক্ষণ করা হয় না।"
+                             : "Scanning and cleanup run on this device. File paths are never saved in activity history.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            }
+    }
+
+    private var aboutCard: some View {
+        settingsCard(
+            symbol: "info.circle.fill",
+            tint: .orange,
+            title: bangla ? "সম্পর্কে" : "About",
+            subtitle: bangla ? "অ্যাপ ও সিস্টেমের তথ্য" : "App and system information") {
+                VStack(spacing: 0) {
+                    infoRow(
+                        title: "MacPulse",
+                        value: bangla ? "নেটিভ ম্যাক ক্লিনার" : "Native Mac cleaner",
+                        symbol: "macwindow")
+                    Divider().padding(.leading, 38)
+                    infoRow(
+                        title: "macOS",
+                        value: ProcessInfo.processInfo.operatingSystemVersionString,
+                        symbol: "desktopcomputer")
+                    Divider().padding(.leading, 38)
+                    infoRow(
+                        title: bangla ? "ক্লিনার ইঞ্জিন" : "Cleaner engine",
+                        value: bangla ? "অন্তর্নির্মিত" : "Built in",
+                        symbol: "trash")
+                }
+            }
+    }
+
+    private func settingsCard<Content: View>(
+        symbol: String,
+        tint: Color,
+        title: String,
+        subtitle: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 38, height: 38)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline)
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.07)))
+        .shadow(color: .black.opacity(0.035), radius: 12, y: 4)
+    }
+
+    private func choiceButton(
+        title: String,
+        symbol: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol).font(.caption.weight(.semibold))
+                Text(title).font(.caption.weight(.medium)).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .foregroundStyle(isSelected ? theme.accent.color : Color.primary.opacity(0.78))
+            .background(isSelected ? theme.accent.color.opacity(0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(isSelected ? theme.accent.color.opacity(0.4) : Color.primary.opacity(0.06)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func themeSymbol(_ mode: AppearanceMode) -> String {
+        switch mode {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max.fill"
+        case .dark: "moon.fill"
+        }
+    }
+
+    private func infoRow(title: String, value: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+            Text(title).font(.callout.weight(.medium))
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.vertical, 11)
     }
 }
