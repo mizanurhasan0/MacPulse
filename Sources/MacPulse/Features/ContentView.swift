@@ -90,6 +90,21 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
+        .navigationTitle("")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    Image(systemName: (selection ?? .cleaner).symbol)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(selectedPageTitle)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityElement(children: .combine)
+            }
+        }
         .environment(\.locale, localization.language.locale)
         .environment(\.layoutDirection, localization.layoutDirection)
         .task { model.startMonitoring() }
@@ -119,6 +134,14 @@ struct ContentView: View {
 
     private func copy(_ english: String, _ bangla: String) -> String {
         localization.language == .bangla ? bangla : english
+    }
+
+    private var selectedPageTitle: String {
+        switch selection ?? .cleaner {
+        case .cleaner: copy("Cleaner", "ক্লিনার")
+        case .history: copy("Activity History", "অ্যাক্টিভিটি হিস্ট্রি")
+        case .settings: copy("Settings", "সেটিংস")
+        }
     }
 }
 
@@ -507,6 +530,20 @@ private struct CleanerHomeView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
+                if model.hasScanResult {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            model.scanForCleanup()
+                        }
+                    } label: {
+                        Label(bangla ? "আবার স্ক্যান" : "Rescan", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(model.isBusy)
+                    .help(bangla ? "নতুন করে ক্লিন করার ফোল্ডার খুঁজুন" : "Scan cleanup folders again")
+                    .accessibilityIdentifier("cleaner.rescan")
+                }
                 if model.hasScanResult && !model.entries.isEmpty {
                     Toggle(bangla ? "সব নির্বাচন" : "Select all", isOn: Binding(
                         get: { model.areAllEntriesSelected },
@@ -881,14 +918,9 @@ private struct ActivityHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(bangla ? "অ্যাক্টিভিটি হিস্ট্রি" : "Activity History").font(.largeTitle.bold())
-                    Text(bangla ? "সাম্প্রতিক cleanup-এর সারাংশ" : "Recent cleanup summaries")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if !model.activityRecords.isEmpty {
+            if !model.activityRecords.isEmpty {
+                HStack {
+                    Spacer()
                     Button(bangla ? "ইতিহাস মুছুন" : "Clear history", role: .destructive) {
                         confirmingClear = true
                     }
@@ -978,8 +1010,7 @@ private struct CleanerSettingsView: View {
                 : [GridItem(.flexible(), alignment: .top)]
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    pageHeader
+                VStack(alignment: .leading, spacing: 18) {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
                         if isWide {
                             appearanceCard
@@ -1001,33 +1032,7 @@ private struct CleanerSettingsView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .navigationTitle("")
         .toolbarTitleDisplayMode(.inline)
-    }
-
-    private var pageHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(theme.accent.color)
-                .frame(width: 48, height: 48)
-                .background(theme.accent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 15))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(bangla ? "সেটিংস" : "Settings")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text(bangla ? "অ্যাপের পছন্দ ও গোপনীয়তা নিয়ন্ত্রণ করুন" : "Personalize your workspace and privacy")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Label(bangla ? "এই Mac-এ" : "On this Mac", systemImage: "checkmark.shield.fill")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.green)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.green.opacity(0.1), in: Capsule())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var appearanceCard: some View {
