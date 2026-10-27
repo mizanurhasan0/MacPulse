@@ -187,6 +187,9 @@ private struct CleanerHomeView: View {
     @State private var expandedGroups: Set<String> = []
     @State private var isProgressHovered = false
     @State private var hoveredGroup: String?
+    @State private var scanAnimationStart: TimeInterval?
+    @State private var scanPauseStart: TimeInterval?
+    @State private var scanPausedDuration: TimeInterval = 0
 
     private var bangla: Bool { localization.language == .bangla }
 
@@ -251,25 +254,25 @@ private struct CleanerHomeView: View {
     private func progressPanel(ringSize: CGFloat) -> some View {
         VStack(spacing: 16) {
             Spacer(minLength: 0)
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: model.stage != .scanning || model.isPaused)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: model.stage != .scanning || model.isPaused)) { timeline in
                 Button(action: progressControlTapped) {
                     ZStack {
                         Circle()
                             .stroke(Color.white.opacity(0.09), style: StrokeStyle(lineWidth: 13, lineCap: .round))
                         Circle()
-                            .trim(from: 0, to: model.stage == .scanning ? 0.24 : ringProgress)
+                            .trim(from: 0, to: scanArcLength(at: timeline.date))
                             .stroke(
                                 AngularGradient(
                                     colors: [Color.accentColor.opacity(0.4), Color.cyan, Color.accentColor],
                                     center: .center),
                                 style: StrokeStyle(lineWidth: 13, lineCap: .round))
-                            .rotationEffect(.degrees(model.stage == .scanning && !model.isPaused
-                                ? timeline.date.timeIntervalSinceReferenceDate * -115
-                                : -90))
-                            .animation(.easeInOut(duration: 0.32), value: ringProgress)
+                            .rotationEffect(.degrees(scanRotation(at: timeline.date)))
+                            .animation(.spring(response: 0.52, dampingFraction: 0.88), value: ringProgress)
 
                         ringCenter
+                            .transition(.opacity.combined(with: .scale(scale: 0.88)))
                     }
+                    .animation(.easeInOut(duration: 0.32), value: model.stage)
                     .overlay {
                         if isProgressHovered {
                             Image(systemName: progressControlSymbol)
@@ -349,6 +352,23 @@ private struct CleanerHomeView: View {
         return model.hasScanResult ? 1 : 0.08
     }
 
+    private func scanArcLength(at date: Date) -> Double {
+        guard model.stage == .scanning else { return ringProgress }
+        let elapsed = scanElapsed(at: date)
+        let breathing = (sin(elapsed * 2.2) + 1) / 2
+        return 0.12 + breathing * 0.18
+    }
+
+    private func scanRotation(at date: Date) -> Double {
+        guard model.stage == .scanning else { return -90 }
+        let elapsed = scanElapsed(at: date)
+        return -90 - elapsed * 105
+    }
+
+    private func scanElapsed(at date: Date) -> TimeInterval {
+        max(0, date.timeIntervalSinceReferenceDate - (scanAnimationStart ?? date.timeIntervalSinceReferenceDate) - scanPausedDuration)
+    }
+
     private var progressTitle: String {
         if model.isPaused { return bangla ? "কাজ বিরতিতে" : "Paused" }
         if model.stage == .scanning { return bangla ? "স্ক্যান চলছে" : "Scanning your Mac" }
@@ -404,11 +424,23 @@ private struct CleanerHomeView: View {
 
     private func progressControlTapped() {
         if model.isBusy {
+            let now = Date.timeIntervalSinceReferenceDate
+            if model.isPaused {
+                if let scanPauseStart {
+                    scanPausedDuration += now - scanPauseStart
+                    self.scanPauseStart = nil
+                }
+            } else if model.stage == .scanning {
+                scanPauseStart = now
+            }
             model.togglePauseResume()
         } else if model.hasScanResult && !model.cleanupIsComplete && !model.entries.isEmpty {
             if model.selectedCount > 0 { showCleanConfirmation = true }
             else { model.cleanSelected() }
         } else {
+            scanAnimationStart = Date.timeIntervalSinceReferenceDate
+            scanPauseStart = nil
+            scanPausedDuration = 0
             model.scanForCleanup()
         }
     }
