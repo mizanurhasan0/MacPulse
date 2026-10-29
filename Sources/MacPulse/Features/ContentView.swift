@@ -15,6 +15,9 @@ private enum CleanerPage: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject private var model: CleanerModel
     @EnvironmentObject private var localization: LocalizationStore
+    @EnvironmentObject private var companion: FloatingCompanionStore
+    @EnvironmentObject private var theme: ThemeStore
+    @Environment(\.openWindow) private var openWindow
     @State private var selection: CleanerPage? = .cleaner
     @Namespace private var sidebarSelection
 
@@ -107,8 +110,18 @@ struct ContentView: View {
         }
         .environment(\.locale, localization.language.locale)
         .environment(\.layoutDirection, localization.layoutDirection)
-        .task { model.startMonitoring() }
-        .onDisappear { model.stopMonitoring() }
+        .task {
+            model.startMonitoring()
+            companion.configure(model: model, localization: localization, theme: theme) {
+                NotificationCenter.default.post(name: .macPulseShowCleaner, object: nil)
+                openWindow(id: "main")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macPulseShowCleaner)) { _ in
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                selection = .cleaner
+            }
+        }
         .alert(copy("Cleanup issue", "ক্লিন করতে সমস্যা"), isPresented: Binding(
             get: { model.lastError != nil },
             set: { if !$0 { model.clearError() } }
@@ -206,6 +219,7 @@ private struct SidebarNavigationRow: View {
 private struct CleanerHomeView: View {
     @EnvironmentObject private var model: CleanerModel
     @EnvironmentObject private var localization: LocalizationStore
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showCleanConfirmation = false
     @State private var expandedGroups: Set<String> = []
     @State private var isProgressHovered = false
@@ -257,7 +271,7 @@ private struct CleanerHomeView: View {
             progressPanel(ringSize: ringSize)
                 .frame(width: progressWidth)
             Rectangle()
-                .fill(Color.white.opacity(0.1))
+                .fill(Color.primary.opacity(0.10))
                 .frame(width: 1)
                 .padding(.vertical, 20)
             folderSelectionPanel
@@ -266,12 +280,20 @@ private struct CleanerHomeView: View {
         .frame(height: panelHeight)
         .background(
             LinearGradient(
-                colors: [Color(red: 0.07, green: 0.14, blue: 0.23), Color(nsColor: .underPageBackgroundColor)],
+                colors: dashboardGradientColors,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing),
             in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color.accentColor.opacity(0.2)))
         .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+
+    private var dashboardGradientColors: [Color] {
+        if colorScheme == .dark {
+            [Color(red: 0.07, green: 0.14, blue: 0.23), Color(red: 0.12, green: 0.19, blue: 0.28)]
+        } else {
+            [Color(red: 0.96, green: 0.98, blue: 1.0), Color(red: 0.89, green: 0.94, blue: 0.98)]
+        }
     }
 
     private func progressPanel(ringSize: CGFloat) -> some View {
@@ -281,7 +303,7 @@ private struct CleanerHomeView: View {
                 Button(action: progressControlTapped) {
                     ZStack {
                         Circle()
-                            .stroke(Color.white.opacity(0.09), style: StrokeStyle(lineWidth: 13, lineCap: .round))
+                            .stroke(Color.primary.opacity(0.09), style: StrokeStyle(lineWidth: 13, lineCap: .round))
                         Circle()
                             .trim(from: 0, to: scanArcLength(at: timeline.date))
                             .stroke(
@@ -303,7 +325,7 @@ private struct CleanerHomeView: View {
                                 .foregroundStyle(.white)
                                 .frame(width: 58, height: 58)
                                 .background(Color.accentColor.opacity(0.92), in: Circle())
-                                .overlay(Circle().strokeBorder(Color.white.opacity(0.24)))
+                                .overlay(Circle().strokeBorder(Color.primary.opacity(0.24)))
                                 .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
                                 .transition(.scale(scale: 0.86).combined(with: .opacity))
                         }
@@ -667,8 +689,8 @@ private struct CleanerHomeView: View {
                                 }
                             }
                             .padding(.horizontal, 5)
-                            .background(Color.white.opacity(hoveredGroup == group.category ? 0.065 : 0.035), in: RoundedRectangle(cornerRadius: 13))
-                            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.white.opacity(hoveredGroup == group.category ? 0.09 : 0.04)))
+                            .background(Color.primary.opacity(hoveredGroup == group.category ? 0.065 : 0.035), in: RoundedRectangle(cornerRadius: 13))
+                            .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(Color.primary.opacity(hoveredGroup == group.category ? 0.09 : 0.04)))
                             .clipShape(RoundedRectangle(cornerRadius: 13))
                             .onHover { hovering in
                                 withAnimation(.easeOut(duration: 0.16)) {
@@ -696,7 +718,7 @@ private struct CleanerHomeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule().fill(Color.primary.opacity(0.1))
                         Capsule()
                             .fill(LinearGradient(colors: [.cyan, Color.accentColor], startPoint: .leading, endPoint: .trailing))
                             .frame(width: geometry.size.width * model.cleanupProgress)
@@ -1000,6 +1022,7 @@ private struct HistoryRecordRow: View {
 private struct CleanerSettingsView: View {
     @EnvironmentObject private var localization: LocalizationStore
     @EnvironmentObject private var theme: ThemeStore
+    @EnvironmentObject private var companion: FloatingCompanionStore
     private var bangla: Bool { localization.language == .bangla }
 
     var body: some View {
@@ -1017,11 +1040,13 @@ private struct CleanerSettingsView: View {
                             aboutCard
                             languageCard
                             privacyCard
+                            companionCard
                         } else {
                             appearanceCard
                             languageCard
                             privacyCard
                             aboutCard
+                            companionCard
                         }
                     }
                 }
@@ -1033,6 +1058,28 @@ private struct CleanerSettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .toolbarTitleDisplayMode(.inline)
+    }
+
+    private var companionCard: some View {
+        settingsCard(
+            symbol: "pawprint.fill",
+            tint: .orange,
+            title: bangla ? "ভাসমান বিড়াল" : "Floating cat",
+            subtitle: bangla ? "ডেস্কটপ থেকে দ্রুত ক্যাশে পরিষ্কার করুন" : "A little desktop companion for quick cleanup") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(
+                        bangla ? "ভাসমান বিড়াল দেখান" : "Show floating cat",
+                        isOn: Binding(get: { companion.isEnabled }, set: { companion.setEnabled($0) }))
+                        .toggleStyle(.switch)
+                        .accessibilityIdentifier("settings.floatingCat")
+                    Text(bangla
+                         ? "বিড়ালটি টেনে সরান, ক্লিক করে স্টোরেজ ও Clear দেখুন। Cleaner উইন্ডো বন্ধ করলেও এটি থাকবে। বন্ধ করতে এই সুইচটি OFF করুন।"
+                         : "Drag the cat to move it. Click it for storage and Clear. It stays when the Cleaner window closes. Turn this switch off to hide it.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
     }
 
     private var appearanceCard: some View {

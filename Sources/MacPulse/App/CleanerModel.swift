@@ -43,6 +43,7 @@ enum CleanerStage: Equatable {
             .reduce(UInt64(0)) { $0 &+ $1.estimatedBytes }
     }
     var pendingCount: Int { entries.filter { $0.state == .pending }.count }
+    var skippedCount: Int { entries.filter { $0.state == .retained }.count }
 
     func isCategorySelected(_ category: String) -> Bool {
         let items = entries.filter { $0.category == category }
